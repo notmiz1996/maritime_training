@@ -1,0 +1,7 @@
+django==5.0
+djangorestframework==3.14
+psycopg2-binary
+redis
+spiffworkflow
+django-redis
+python-dotenv
