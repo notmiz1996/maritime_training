@@ -5,3 +5,4 @@ redis
 spiffworkflow
 django-redis
 python-dotenv
+loguru>=0.7

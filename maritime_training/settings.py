@@ -135,3 +135,69 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ==================== Loguru 日志配置 ====================
+# 参考文档：后端开发与验收手册 - Phase 7 日志规范
+
+from pathlib import Path
+import sys
+
+# 将 Loguru 添加到 sys.modules，Django 的 logging 系统会使用它
+from loguru import logger
+
+# 日志目录
+LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+# Loguru 默认配置：移除默认 handler，添加自定义配置
+logger.remove()  # 移除默认的 stderr handler
+
+# 控制台输出（DEBUG 级别显示，production 显示 INFO）
+logger.add(
+    sys.stderr,
+    level="DEBUG",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    filter=lambda record: record["level"].no >= 20,  # 20 = INFO，DEBUG 不显示在控制台
+)
+
+# 文件输出：按天切割，保留 30 天
+logger.add(
+    LOG_DIR / "app_{time:YYYY-MM-DD}.log",
+    rotation="00:00",  # 每天午夜轮转
+    retention="30 days",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    encoding="utf-8",
+    enqueue=True,  # 线程安全
+)
+
+# 错误日志单独记录
+logger.add(
+    LOG_DIR / "error_{time:YYYY-MM-DD}.log",
+    rotation="00:00",
+    retention="90 days",
+    level="ERROR",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}\n{exception}",
+    encoding="utf-8",
+    enqueue=True,
+)
+
+# 替换 Django 的 root logger
+import logging
+logging.basicConfig(handlers=[], level=logging.INFO)
+
+# 将 Loguru 设置为 Django 的处理器
+class LoguruHandler(logging.Handler):
+    def emit(self, record):
+        log_level = record.levelname
+        log_message = self.format(record)
+        if log_level == "ERROR":
+            logger.error(log_message)
+        elif log_level == "WARNING":
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+
+# 配置 Django root logger
+root_logger = logging.getLogger()
+root_logger.addHandler(LoguruHandler())
