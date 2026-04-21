@@ -5,7 +5,9 @@
 """
 
 from django.db import models
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from loguru import logger
 
 
 class Organization(models.Model):
@@ -207,3 +209,109 @@ class Personnel(models.Model):
             # 最后一位可以是 X（不区分大小写）
             if not self.id_card[-1].isdigit() and self.id_card[-1].upper() != 'X':
                 raise ValidationError({'id_card': '身份证号格式不正确'})
+
+class Position(models.Model):
+    """职务模型"""
+
+    id = models.BigAutoField(primary_key=True, verbose_name='职务ID', help_text='职务唯一标识符')
+    name = models.CharField(
+        max_length=50,
+        verbose_name='职务名称',
+        help_text='请输入职务名称，如"船长"、"大副"'
+    )
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        verbose_name='职务编码',
+        help_text='请输入唯一的职务编码，如"CAPTAIN"、"FIRST_MATE"'
+    )
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        verbose_name='所属组织',
+        help_text='选择职务所属的组织'
+    )
+    permissions = models.JSONField(
+        default=list,
+        verbose_name='权限列表',
+        help_text='JSON格式的权限标识列表，如["training.create", "attendance.view"]'
+    )
+    is_concurrentable = models.BooleanField(
+        default=True,
+        verbose_name='允许兼职',
+        help_text='是否允许人员兼任此职务'
+    )
+    is_deleted = models.BooleanField(
+        default=False,
+        verbose_name='是否删除',
+        help_text='软删除标记'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='创建时间',
+        help_text='自动记录'
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='更新时间',
+        help_text='自动更新'
+    )
+
+    class Meta:
+        ordering = ['organization__path', 'code']
+        verbose_name = '职务'
+        verbose_name_plural = '职务列表'
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+class PersonnelPosition(models.Model):
+    """人员-职务关联模型"""
+
+    id = models.BigAutoField(primary_key=True, verbose_name='记录ID', help_text='关联记录唯一标识符')
+    personnel = models.ForeignKey(
+        Personnel,
+        on_delete=models.CASCADE,
+        verbose_name='人员',
+        help_text='选择人员'
+    )
+    position = models.ForeignKey(
+        Position,
+        on_delete=models.CASCADE,
+        verbose_name='职务',
+        help_text='选择职务'
+    )
+    is_primary = models.BooleanField(
+        default=False,
+        verbose_name='主职务',
+        help_text='是否为主职务（一个人只能有一个主职务）'
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='生效中',
+        help_text='是否生效'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='创建时间',
+        help_text='自动记录'
+    )
+
+    class Meta:
+        unique_together = ['personnel', 'position']
+        ordering = ['-is_primary', '-created_at']
+        verbose_name = '人员职务'
+        verbose_name_plural = '人员职务列表'
+
+    def __str__(self):
+        primary_tag = '★' if self.is_primary else ''
+        return f"{self.personnel.name} - {self.position.name} {primary_tag}"
+
+    def save(self, *args, **kwargs):
+        """如果设置为主职务，自动取消同人员其他主职务标记"""
+        if self.is_primary:
+            PersonnelPosition.objects.filter(
+                personnel=self.personnel,
+                is_primary=True
+            ).exclude(pk=self.pk).update(is_primary=False)
+        super().save(*args, **kwargs)
