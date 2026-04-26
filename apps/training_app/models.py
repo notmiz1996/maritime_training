@@ -1,5 +1,16 @@
+# -*- coding: utf-8 -*-
+"""
+training_app - 培训管理模块
+
+包含：培训类型、培训班、培训班-学员关联模型
+"""
+
+from decimal import Decimal
+
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
+from django.utils.html import format_html
 
 
 class TrainingType(models.Model):
@@ -61,6 +72,7 @@ class TrainingType(models.Model):
                 if ancestor == self:
                     raise ValidationError({'parent': '不能将自身或下级类型设为上级类型'})
                 ancestor = ancestor.parent
+
 
 class TrainingClass(models.Model):
     """培训班模型"""
@@ -279,3 +291,181 @@ class TrainingClassStudent(models.Model):
         """校验出勤率范围"""
         if self.attendance_rate < 0 or self.attendance_rate > 999.99:
             raise ValidationError({'attendance_rate': '出勤率必须在 0.00 ~ 999.99 范围内'})
+
+
+class CourseSchedule(models.Model):
+    """
+    课程安排模型
+
+    记录每个培训班的每日课程安排，包括课程名称、时间、地点等信息。
+    一个培训班包含多个课程安排，通过 ForeignKey 关联。
+
+    课程类型：
+    - theory：理论课
+    - practical：实操课
+    - exam：考试
+    - assessment：评估
+    """
+
+    COURSE_TYPE_CHOICES = [
+        ('theory', '理论课'),
+        ('practical', '实操课'),
+        ('exam', '考试'),
+        ('assessment', '评估'),
+    ]
+
+    SESSION_CHOICES = [
+        ('morning', '上午'),
+        ('afternoon', '下午'),
+        ('evening', '晚上'),
+        ('full_day', '全天'),
+    ]
+
+    id = models.UUIDField(
+        primary_key=True,
+        editable=False,
+        verbose_name='课程ID',
+        help_text='课程安排唯一标识符'
+    )
+    training_class = models.ForeignKey(
+        TrainingClass,
+        on_delete=models.CASCADE,
+        related_name='course_schedules',
+        verbose_name='所属班级',
+        help_text='课程所属的培训班'
+    )
+    course_name = models.CharField(
+        max_length=200,
+        verbose_name='课程名称',
+        help_text='请输入课程名称，如"海上救生设备操作"'
+    )
+    course_type = models.CharField(
+        max_length=20,
+        choices=COURSE_TYPE_CHOICES,
+        verbose_name='课程类型',
+        help_text='theory=理论课, practical=实操课, exam=考试, assessment=评估'
+    )
+    teacher = models.CharField(
+        max_length=100,
+        verbose_name='授课教师',
+        help_text='授课教师姓名'
+    )
+    teacher_contact = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='教师联系方式',
+        help_text='授课教师联系方式'
+    )
+    date = models.DateField(
+        verbose_name='课程日期',
+        help_text='课程安排的日期'
+    )
+    session = models.CharField(
+        max_length=10,
+        choices=SESSION_CHOICES,
+        verbose_name='场次',
+        help_text='morning=上午, afternoon=下午, evening=晚上, full_day=全天'
+    )
+    start_time = models.TimeField(
+        verbose_name='开始时间',
+        help_text='课程开始时间'
+    )
+    end_time = models.TimeField(
+        verbose_name='结束时间',
+        help_text='课程结束时间'
+    )
+    location = models.CharField(
+        max_length=200,
+        verbose_name='上课地点',
+        help_text='上课地点/教室，如"A101教室"或"实操场地1"'
+    )
+    max_attendees = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(1000)],
+        verbose_name='最大人数',
+        help_text='本课程最大容纳人数，不填则跟随班级设置'
+    )
+    credit_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        verbose_name='学分/学时',
+        help_text='本课程对应的学分或学时数'
+    )
+    description = models.TextField(
+        blank=True,
+        verbose_name='课程简介',
+        help_text='课程的详细说明'
+    )
+    materials = models.TextField(
+        blank=True,
+        verbose_name='所需教材/材料',
+        help_text='本课程需要的教材或材料清单'
+    )
+    prerequisite = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='先修课程',
+        help_text='本课程的先修课程要求'
+    )
+    remark = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='备注',
+        help_text='特殊情况说明'
+    )
+    is_deleted = models.BooleanField(
+        default=False,
+        verbose_name='已删除',
+        help_text='软删除标记'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='创建时间',
+        help_text='记录创建时间'
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='更新时间',
+        help_text='最后更新时间'
+    )
+
+    class Meta:
+        db_table = 'course_schedule'
+        ordering = ['date', 'start_time', 'session']
+        verbose_name = '课程安排'
+        verbose_name_plural = '课程安排列表'
+        indexes = [
+            models.Index(fields=['training_class', 'date']),
+            models.Index(fields=['date']),
+            models.Index(fields=['course_type']),
+            models.Index(fields=['teacher']),
+            models.Index(fields=['-date']),
+        ]
+
+    def __str__(self):
+        return f"{self.course_name} - {self.date} {self.get_session_display()}"
+
+    def clean(self):
+        """校验课程安排数据"""
+        errors = {}
+
+        # 结束时间不能早于开始时间
+        if self.start_time and self.end_time:
+            if self.end_time <= self.start_time:
+                errors['end_time'] = '结束时间不能早于开始时间'
+
+        # 课程日期不能超出班级日期范围
+        if self.training_class and self.date:
+            if self.date < self.training_class.start_date or self.date > self.training_class.end_date:
+                errors[
+                    'date'] = f'课程日期必须在班级日期范围内（{self.training_class.start_date} 至 {self.training_class.end_date}）'
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)

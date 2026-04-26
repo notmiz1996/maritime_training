@@ -40,9 +40,22 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    # 组织架构模型
     'apps.organization_app',
+    # 培训管理模块
     'apps.training_app',
+    # 学员
     'apps.student_app',
+    # 考勤管理模块
+    'apps.attendance_app',
+    # 培训证明
+    'apps.certificate_app',
+    # 工作流
+    'apps.workflow_app',
+    # 审计
+    'apps.audit_app',
+    # 配置
+    'apps.config_app'
 ]
 
 MIDDLEWARE = [
