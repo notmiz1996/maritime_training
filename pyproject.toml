@@ -1,7 +1,7 @@
 [project]
 name = "maritime-training"
 version = "0.1.0"
-requires-python = ">=3.14"
-dependencies = [
-    "uuid>=1.30",
-]
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []

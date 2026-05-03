@@ -5,6 +5,7 @@
 """
 
 from django.contrib import admin
+from django.utils.html import format_html
 from .models import Organization, Personnel, Position, PersonnelPosition
 
 
@@ -162,7 +163,7 @@ class PersonnelAdmin(admin.ModelAdmin):
 @admin.register(Position)
 class PositionAdmin(admin.ModelAdmin):
     """职务模型的后台管理配置"""
-
+    filter_horizontal = ['permissions']  # 这行会生成左右双框选择器
     list_display = ['id', 'name', 'code', 'organization', 'is_concurrentable', 'is_deleted', 'created_at']
     search_fields = ['name', 'code', 'organization__name']
     list_filter = ['organization', 'is_concurrentable', 'is_deleted']

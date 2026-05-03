@@ -97,6 +97,7 @@ class Organization(models.Model):
 
     def save(self, *args, **kwargs):
         """保存时自动计算 level 和 path"""
+        # 计算 level
         if self.parent:
             self.level = self.parent.level + 1
             if self.level > 10:
@@ -104,13 +105,20 @@ class Organization(models.Model):
         else:
             self.level = 0
 
-        if not self.pk:
-            super().save(*args, **kwargs)
+        # 计算 path
+        if self.pk:
+            # 已存在，直接计算 path
             self.path = f"/{self.pk}" if self.parent is None else f"{self.parent.path}/{self.pk}"
         else:
+            # 新建时，先保存获取 pk，再计算 path
+            super().save(*args, **kwargs)  # 第一次保存（INSERT）
             self.path = f"/{self.pk}" if self.parent is None else f"{self.parent.path}/{self.pk}"
+            # 只更新 path 字段
+            super().save(update_fields=['path'])
+            return  # 重要：避免再次保存
 
-        super().save(update_fields=['path'] if not self._state.adding else ['level', 'path'])
+        # 更新时
+        super().save(*args, **kwargs)
 
     def clean(self):
         if self.level > 10:
@@ -231,10 +239,11 @@ class Position(models.Model):
         verbose_name='所属组织',
         help_text='选择职务所属的组织'
     )
-    permissions = models.JSONField(
-        default=list,
+    permissions = models.ManyToManyField(
+        'auth.Permission',
+        blank=True,
         verbose_name='权限列表',
-        help_text='JSON格式的权限标识列表，如["training.create", "attendance.view"]'
+        related_name='positions',
     )
     is_concurrentable = models.BooleanField(
         default=True,
